@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.demo_epub_reader.epub.EpubParser
 import com.example.demo_epub_reader.epub.EpubToPdfConverter
+import com.example.demo_epub_reader.epub.PdfToEpubConverter
 import com.example.demo_epub_reader.epub.models.EpubBook
 import com.example.demo_epub_reader.epub.models.EpubChapter
 import com.example.demo_epub_reader.epub.models.ReaderItem
@@ -40,6 +41,13 @@ sealed class PdfConvertState {
     data class Error(val message: String) : PdfConvertState()
 }
 
+sealed class EpubConvertState {
+    object Idle : EpubConvertState()
+    data class Converting(val current: Int, val total: Int, val info: String) : EpubConvertState()
+    data class Done(val savedUri: Uri, val fileName: String) : EpubConvertState()
+    data class Error(val message: String) : EpubConvertState()
+}
+
 class EpubReaderViewModel(application: Application) : AndroidViewModel(application) {
 
     private val parser = EpubParser()
@@ -49,6 +57,9 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
 
     private val _pdfState = MutableStateFlow<PdfConvertState>(PdfConvertState.Idle)
     val pdfState: StateFlow<PdfConvertState> = _pdfState.asStateFlow()
+
+    private val _epubState = MutableStateFlow<EpubConvertState>(EpubConvertState.Idle)
+    val epubState: StateFlow<EpubConvertState> = _epubState.asStateFlow()
 
     fun loadEpubFromUri(uri: Uri) {
         viewModelScope.launch {
@@ -153,6 +164,35 @@ class EpubReaderViewModel(application: Application) : AndroidViewModel(applicati
 
     fun resetPdfState() {
         _pdfState.value = PdfConvertState.Idle
+    }
+
+    fun convertPdfToEpub(uri: Uri, fileDisplayName: String) {
+        viewModelScope.launch {
+            _epubState.value = EpubConvertState.Converting(0, 0, "Starting…")
+            try {
+                val converter = PdfToEpubConverter(getApplication())
+                val savedUri = converter.convert(
+                    pdfUri = uri,
+                    outputFileName = fileDisplayName
+                        .removeSuffix(".pdf").removeSuffix(".PDF")
+                ) { progress ->
+                    _epubState.value = EpubConvertState.Converting(
+                        current = progress.current,
+                        total = progress.total,
+                        info = progress.info
+                    )
+                }
+                val epubName = fileDisplayName
+                    .removeSuffix(".pdf").removeSuffix(".PDF") + ".epub"
+                _epubState.value = EpubConvertState.Done(savedUri, epubName)
+            } catch (e: Exception) {
+                _epubState.value = EpubConvertState.Error(e.message ?: "Conversion failed")
+            }
+        }
+    }
+
+    fun resetEpubState() {
+        _epubState.value = EpubConvertState.Idle
     }
 
     private suspend fun loadChapterContent(

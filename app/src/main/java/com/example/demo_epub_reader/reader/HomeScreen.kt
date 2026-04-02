@@ -20,95 +20,94 @@ fun HomeScreen(
     onFileSelected: (Uri) -> Unit,
     pdfState: PdfConvertState = PdfConvertState.Idle,
     onConvertToPdf: (Uri, String) -> Unit = { _, _ -> },
-    onDismissPdfState: () -> Unit = {}
+    onDismissPdfState: () -> Unit = {},
+    epubState: EpubConvertState = EpubConvertState.Idle,
+    onConvertToEpub: (Uri, String) -> Unit = { _, _ -> },
+    onDismissEpubState: () -> Unit = {}
 ) {
     val context = LocalContext.current
 
     val readLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri?.let { onFileSelected(it) }
-    }
+    ) { uri -> uri?.let { onFileSelected(it) } }
 
-    val convertLauncher = rememberLauncherForActivityResult(
+    val pdfConvertLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         uri?.let {
-            // Resolve display name from URI
             val displayName = resolveFileName(context, it) ?: "book"
             onConvertToPdf(it, displayName)
         }
     }
 
-    // PDF progress / result dialog
+    val epubConvertLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            val displayName = resolveFileName(context, it) ?: "document"
+            onConvertToEpub(it, displayName)
+        }
+    }
+
+    // ── PDF conversion dialog ──────────────────────────────────────────────
     when (val pdf = pdfState) {
         is PdfConvertState.Converting -> {
-            AlertDialog(
-                onDismissRequest = {},
-                confirmButton = {},
-                title = { Text("Converting to PDF…") },
-                text = {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        if (pdf.total > 0) {
-                            LinearProgressIndicator(
-                                progress = { pdf.current.toFloat() / pdf.total },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Chapter ${pdf.current}/${pdf.total}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            CircularProgressIndicator()
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = pdf.chapterTitle,
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
+            ConvertingDialog(
+                title = "Converting EPUB → PDF…",
+                current = pdf.current,
+                total = pdf.total,
+                info = pdf.chapterTitle
             )
         }
-
         is PdfConvertState.Done -> {
-            AlertDialog(
-                onDismissRequest = onDismissPdfState,
-                confirmButton = {
-                    TextButton(onClick = onDismissPdfState) { Text("OK") }
-                },
-                title = { Text("Conversion Complete ✓") },
-                text = {
-                    Text(
-                        text = "Saved to Downloads:\n${pdf.fileName}",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
+            DoneDialog(
+                title = "EPUB → PDF Complete ✓",
+                message = "Saved to Downloads:\n${pdf.fileName}",
+                onDismiss = onDismissPdfState
             )
         }
-
         is PdfConvertState.Error -> {
-            AlertDialog(
-                onDismissRequest = onDismissPdfState,
-                confirmButton = {
-                    TextButton(onClick = onDismissPdfState) { Text("Close") }
-                },
-                title = { Text("Conversion Failed") },
-                text = { Text(pdf.message) }
+            ErrorDialog(
+                title = "EPUB → PDF Failed",
+                message = pdf.message,
+                onDismiss = onDismissPdfState
             )
         }
 
         else -> Unit
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(title = { Text("EPUB Reader") })
+    // ── EPUB conversion dialog ─────────────────────────────────────────────
+    when (val epub = epubState) {
+        is EpubConvertState.Converting -> {
+            ConvertingDialog(
+                title = "Converting PDF → EPUB…",
+                current = epub.current,
+                total = epub.total,
+                info = epub.info
+            )
         }
+
+        is EpubConvertState.Done -> {
+            DoneDialog(
+                title = "PDF → EPUB Complete ✓",
+                message = "Saved to Downloads:\n${epub.fileName}",
+                onDismiss = onDismissEpubState
+            )
+        }
+
+        is EpubConvertState.Error -> {
+            ErrorDialog(
+                title = "PDF → EPUB Failed",
+                message = epub.message,
+                onDismiss = onDismissEpubState
+            )
+        }
+        else -> Unit
+    }
+
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("EPUB Reader") }) }
     ) { paddingValues ->
         Column(
             modifier = Modifier
@@ -126,13 +125,13 @@ fun HomeScreen(
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "Open an EPUB file to start reading",
+                text = "EPUB Reader & Converter",
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Pick a .epub file from your device storage",
+                text = "Pick a file from your device storage",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -145,36 +144,114 @@ fun HomeScreen(
                     readLauncher.launch(arrayOf("application/epub+zip", "application/octet-stream"))
                 },
                 modifier = Modifier
-                    .fillMaxWidth(0.7f)
+                    .fillMaxWidth(0.75f)
                     .height(52.dp)
             ) {
-                Text("Read EPUB File")
+                Text("📖  Read EPUB File")
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // Button 2: Convert to PDF
+            // Button 2: EPUB → PDF
             OutlinedButton(
                 onClick = {
-                    convertLauncher.launch(arrayOf("application/epub+zip", "application/octet-stream"))
+                    pdfConvertLauncher.launch(
+                        arrayOf(
+                            "application/epub+zip",
+                            "application/octet-stream"
+                        )
+                    )
                 },
-                enabled = pdfState !is PdfConvertState.Converting,
+                enabled = pdfState !is PdfConvertState.Converting &&
+                        epubState !is EpubConvertState.Converting,
                 modifier = Modifier
-                    .fillMaxWidth(0.7f)
+                    .fillMaxWidth(0.75f)
                     .height(52.dp)
             ) {
-                Text("Convert EPUB to PDF")
+                Text("📄  Convert EPUB → PDF")
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Button 3: PDF → EPUB
+            OutlinedButton(
+                onClick = {
+                    epubConvertLauncher.launch(arrayOf("application/pdf"))
+                },
+                enabled = pdfState !is PdfConvertState.Converting &&
+                        epubState !is EpubConvertState.Converting,
+                modifier = Modifier
+                    .fillMaxWidth(0.75f)
+                    .height(52.dp)
+            ) {
+                Text("📚  Convert PDF → EPUB")
             }
         }
     }
 }
 
+// ── Reusable dialogs ──────────────────────────────────────────────────────
+
+@Composable
+private fun ConvertingDialog(title: String, current: Int, total: Int, info: String) {
+    AlertDialog(
+        onDismissRequest = {},
+        confirmButton = {},
+        title = { Text(title) },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (total > 0) {
+                    LinearProgressIndicator(
+                        progress = { current.toFloat() / total },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "$current / $total",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    CircularProgressIndicator()
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = info,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    )
+}
+
+@Composable
+private fun DoneDialog(title: String, message: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+        title = { Text(title) },
+        text = { Text(message, style = MaterialTheme.typography.bodyMedium) }
+    )
+}
+
+@Composable
+private fun ErrorDialog(title: String, message: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        title = { Text(title) },
+        text = { Text(message) }
+    )
+}
+
 private fun resolveFileName(context: android.content.Context, uri: Uri): String? {
     return try {
         context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
             cursor.moveToFirst()
-            cursor.getString(nameIndex)
+            cursor.getString(idx)
         }
     } catch (e: Exception) {
         null

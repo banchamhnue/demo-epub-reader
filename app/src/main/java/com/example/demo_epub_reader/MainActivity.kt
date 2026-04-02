@@ -34,6 +34,7 @@ fun EpubReaderApp(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val pdfState by viewModel.pdfState.collectAsStateWithLifecycle()
+    val epubState by viewModel.epubState.collectAsStateWithLifecycle()
 
     when (val state = uiState) {
         is ReaderUiState.Idle -> {
@@ -41,7 +42,10 @@ fun EpubReaderApp(
                 onFileSelected = { uri -> viewModel.loadEpubFromUri(uri) },
                 pdfState = pdfState,
                 onConvertToPdf = { uri, name -> viewModel.convertEpubToPdf(uri, name) },
-                onDismissPdfState = { viewModel.resetPdfState() }
+                onDismissPdfState = { viewModel.resetPdfState() },
+                epubState = epubState,
+                onConvertToEpub = { uri, name -> viewModel.convertPdfToEpub(uri, name) },
+                onDismissEpubState = { viewModel.resetEpubState() }
             )
         }
 
